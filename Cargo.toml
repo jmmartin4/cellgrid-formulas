@@ -1,0 +1,10 @@
+[package]
+name = "cellgrid-formulas"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Read spreadsheet-style grids from files or stdin and tokenize their formulas"
+
+[lib]
+name = "cellgrid_formulas"
+path = "src/lib.rs"
