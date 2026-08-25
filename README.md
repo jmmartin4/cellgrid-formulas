@@ -33,14 +33,16 @@ if let Some(value) = grid.get(b1) {
 }
 ```
 
-Formula text is stored as-is; nothing is evaluated yet. What's there so far
-is a tokenizer:
+Formula text is stored as-is; nothing is evaluated yet, but it is parsed into
+an expression tree with the usual operator precedence:
 
 ```rust
-use cellgrid_formulas::formula::{tokenize, Token};
+use cellgrid_formulas::formula::tokenize;
+use cellgrid_formulas::parser::parse;
 
 let tokens = tokenize("=SUM(A1:A3)+10")?;
-assert!(tokens.contains(&Token::Ident("SUM".to_string())));
+let expr = parse(&tokens)?;
+// expr is Expr::BinOp(Call("SUM", [Range(A1, A3)]), Add, Number(10.0))
 ```
 
 ## Status
@@ -48,7 +50,7 @@ assert!(tokens.contains(&Token::Ident("SUM".to_string())));
 - [x] A1-style cell address parsing, both directions (`CellRef::parse`, `Display`)
 - [x] Loading a grid from any `Read` (file, stdin, buffer)
 - [x] Formula tokenizer (numbers, cell refs, ranges, arithmetic operators, identifiers)
-- [ ] Operator precedence and an actual expression parser
+- [x] Operator precedence and an actual expression parser
 - [ ] Evaluating formulas against a grid, including built-in functions like `SUM`
 - [ ] Detecting circular references between cells
 
