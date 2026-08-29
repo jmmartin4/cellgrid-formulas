@@ -33,17 +33,22 @@ if let Some(value) = grid.get(b1) {
 }
 ```
 
-Formula text is stored as-is; nothing is evaluated yet, but it is parsed into
-an expression tree with the usual operator precedence:
+Formula text is parsed into an expression tree with the usual operator
+precedence, and `eval_cell` walks that tree against a `Grid`, resolving
+any cell references it depends on along the way:
 
 ```rust
-use cellgrid_formulas::formula::tokenize;
-use cellgrid_formulas::parser::parse;
+use cellgrid_formulas::{eval_cell, CellRef, Grid};
 
-let tokens = tokenize("=SUM(A1:A3)+10")?;
-let expr = parse(&tokens)?;
-// expr is Expr::BinOp(Call("SUM", [Range(A1, A3)]), Add, Number(10.0))
+let grid = Grid::from_reader("1,2,3\n=SUM(A1:C1)+10".as_bytes())?;
+let total = eval_cell(&grid, CellRef::new(0, 1))?;
+assert_eq!(total, 16.0);
 ```
+
+A blank or missing cell evaluates to 0 in arithmetic but is skipped by
+`AVERAGE`, `MIN`, `MAX`, and `COUNT` so missing data doesn't masquerade as a
+real zero. A cell whose formula (directly or transitively) refers back to
+itself comes back as `EvalError::CircularReference` instead of looping.
 
 ## Status
 
@@ -51,8 +56,9 @@ let expr = parse(&tokens)?;
 - [x] Loading a grid from any `Read` (file, stdin, buffer)
 - [x] Formula tokenizer (numbers, cell refs, ranges, arithmetic operators, identifiers)
 - [x] Operator precedence and an actual expression parser
-- [ ] Evaluating formulas against a grid, including built-in functions like `SUM`
-- [ ] Detecting circular references between cells
+- [x] Evaluating formulas against a grid, with `SUM`, `AVERAGE`, `MIN`, `MAX`, `COUNT`
+- [x] Detecting circular references between cells
+- [ ] Grid loading that handles quoted CSV fields
 
 ## License
 

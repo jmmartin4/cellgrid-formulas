@@ -47,6 +47,30 @@ impl CellRef {
     }
 }
 
+/// Expands a rectangular range into every cell it covers, in row-major
+/// order. Accepts corners in either order, so `A1:C3` and `C3:A1` expand
+/// to the same set of cells.
+pub fn expand_range(a: CellRef, b: CellRef) -> Vec<CellRef> {
+    let (col_start, col_end) = if a.col <= b.col {
+        (a.col, b.col)
+    } else {
+        (b.col, a.col)
+    };
+    let (row_start, row_end) = if a.row <= b.row {
+        (a.row, b.row)
+    } else {
+        (b.row, a.row)
+    };
+
+    let mut cells = Vec::with_capacity(((row_end - row_start + 1) * (col_end - col_start + 1)) as usize);
+    for row in row_start..=row_end {
+        for col in col_start..=col_end {
+            cells.push(CellRef::new(col, row));
+        }
+    }
+    cells
+}
+
 impl fmt::Display for CellRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut col = self.col + 1;
@@ -90,5 +114,32 @@ mod tests {
             let parsed = CellRef::parse(text).unwrap();
             assert_eq!(parsed.to_string(), text);
         }
+    }
+
+    #[test]
+    fn expands_a_range_in_row_major_order() {
+        let cells = expand_range(CellRef::new(0, 0), CellRef::new(1, 1));
+        assert_eq!(
+            cells,
+            vec![
+                CellRef::new(0, 0),
+                CellRef::new(1, 0),
+                CellRef::new(0, 1),
+                CellRef::new(1, 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn expands_a_range_regardless_of_corner_order() {
+        let forward = expand_range(CellRef::new(0, 0), CellRef::new(0, 2));
+        let backward = expand_range(CellRef::new(0, 2), CellRef::new(0, 0));
+        assert_eq!(forward, backward);
+    }
+
+    #[test]
+    fn expands_a_single_cell_range() {
+        let cells = expand_range(CellRef::new(3, 3), CellRef::new(3, 3));
+        assert_eq!(cells, vec![CellRef::new(3, 3)]);
     }
 }
