@@ -58,7 +58,7 @@ itself comes back as `EvalError::CircularReference` instead of looping.
 - [x] Operator precedence and an actual expression parser
 - [x] Evaluating formulas against a grid, with `SUM`, `AVERAGE`, `MIN`, `MAX`, `COUNT`
 - [x] Detecting circular references between cells
-- [ ] Grid loading that handles quoted CSV fields
+- [x] Grid loading that handles quoted CSV fields
 
 ## License
 
