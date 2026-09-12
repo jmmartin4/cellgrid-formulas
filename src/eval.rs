@@ -16,6 +16,7 @@ pub enum EvalError {
     NotANumber(String),
     RangeOutsideFunction,
     EmptyAggregate(String),
+    WrongArgumentCount(String, usize, usize),
 }
 
 impl fmt::Display for EvalError {
@@ -30,6 +31,9 @@ impl fmt::Display for EvalError {
             }
             EvalError::EmptyAggregate(name) => {
                 write!(f, "{name} needs at least one value")
+            }
+            EvalError::WrongArgumentCount(name, expected, found) => {
+                write!(f, "{name} takes {expected} arguments, found {found}")
             }
         }
     }
@@ -142,12 +146,20 @@ fn eval_call(
     args: &[Expr],
     visiting: &mut HashSet<CellRef>,
 ) -> Result<f64, EvalError> {
+    let upper = name.to_ascii_uppercase();
+    // IF only evaluates the branch it takes, unlike the aggregate functions
+    // below - a bad reference or division by zero in the untaken branch
+    // shouldn't fail the whole formula.
+    if upper == "IF" {
+        return eval_if(grid, args, visiting);
+    }
+
     let mut values = Vec::new();
     for arg in args {
         values.extend(collect_values(grid, arg, visiting)?);
     }
 
-    match name.to_ascii_uppercase().as_str() {
+    match upper.as_str() {
         "SUM" => Ok(values.iter().sum()),
         "COUNT" => Ok(values.len() as f64),
         "AVERAGE" => {
@@ -165,6 +177,25 @@ fn eval_call(
             .fold(None, |acc: Option<f64>, v| Some(acc.map_or(v, |a| a.max(v))))
             .ok_or_else(|| EvalError::EmptyAggregate("MAX".to_string())),
         other => Err(EvalError::UnknownFunction(other.to_string())),
+    }
+}
+
+/// `IF(condition, then, else)`. There's no comparison operator yet, so the
+/// condition is just "is this nonzero" - the same truthiness a `SUM` of a
+/// boolean-flag column already relies on.
+fn eval_if(grid: &Grid, args: &[Expr], visiting: &mut HashSet<CellRef>) -> Result<f64, EvalError> {
+    if args.len() != 3 {
+        return Err(EvalError::WrongArgumentCount(
+            "IF".to_string(),
+            3,
+            args.len(),
+        ));
+    }
+    let condition = eval_expr(grid, &args[0], visiting)?;
+    if condition != 0.0 {
+        eval_expr(grid, &args[1], visiting)
+    } else {
+        eval_expr(grid, &args[2], visiting)
     }
 }
 
@@ -274,6 +305,41 @@ mod tests {
         assert_eq!(
             eval_cell(&grid, CellRef::new(0, 2)),
             Err(EvalError::RangeOutsideFunction)
+        );
+    }
+
+    #[test]
+    fn if_picks_the_true_branch_on_a_nonzero_condition() {
+        let grid = Grid::from_reader("=IF(1,10,20)".as_bytes()).unwrap();
+        assert_eq!(eval_cell(&grid, CellRef::new(0, 0)), Ok(10.0));
+    }
+
+    #[test]
+    fn if_picks_the_false_branch_on_a_zero_condition() {
+        let grid = Grid::from_reader("=IF(0,10,20)".as_bytes()).unwrap();
+        assert_eq!(eval_cell(&grid, CellRef::new(0, 0)), Ok(20.0));
+    }
+
+    #[test]
+    fn if_condition_can_be_a_cell_reference() {
+        let grid = Grid::from_reader("5\n=IF(A1,1,-1)".as_bytes()).unwrap();
+        assert_eq!(eval_cell(&grid, CellRef::new(0, 1)), Ok(1.0));
+    }
+
+    #[test]
+    fn if_does_not_evaluate_the_untaken_branch() {
+        // The false branch calls a function that doesn't exist, but since
+        // the condition is true it should never be evaluated.
+        let grid = Grid::from_reader("=IF(1,42,NOPE())".as_bytes()).unwrap();
+        assert_eq!(eval_cell(&grid, CellRef::new(0, 0)), Ok(42.0));
+    }
+
+    #[test]
+    fn if_rejects_the_wrong_number_of_arguments() {
+        let grid = Grid::from_reader("=IF(1,2)".as_bytes()).unwrap();
+        assert_eq!(
+            eval_cell(&grid, CellRef::new(0, 0)),
+            Err(EvalError::WrongArgumentCount("IF".to_string(), 3, 2))
         );
     }
 }

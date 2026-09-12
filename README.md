@@ -50,13 +50,18 @@ A blank or missing cell evaluates to 0 in arithmetic but is skipped by
 real zero. A cell whose formula (directly or transitively) refers back to
 itself comes back as `EvalError::CircularReference` instead of looping.
 
+`IF(condition, then, else)` only evaluates the branch it takes, and treats
+any nonzero condition as true - there's no comparison operator yet, so the
+condition is usually a cell holding a 0/1 flag rather than an expression
+like `A1>10`.
+
 ## Status
 
 - [x] A1-style cell address parsing, both directions (`CellRef::parse`, `Display`)
 - [x] Loading a grid from any `Read` (file, stdin, buffer)
 - [x] Formula tokenizer (numbers, cell refs, ranges, arithmetic operators, identifiers)
 - [x] Operator precedence and an actual expression parser
-- [x] Evaluating formulas against a grid, with `SUM`, `AVERAGE`, `MIN`, `MAX`, `COUNT`
+- [x] Evaluating formulas against a grid, with `SUM`, `AVERAGE`, `MIN`, `MAX`, `COUNT`, `IF`
 - [x] Detecting circular references between cells
 - [x] Grid loading that handles quoted CSV fields
 - [x] Integration tests covering Grid + parser + eval end to end
