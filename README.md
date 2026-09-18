@@ -35,15 +35,26 @@ if let Some(value) = grid.get(b1) {
 
 Formula text is parsed into an expression tree with the usual operator
 precedence, and `eval_cell` walks that tree against a `Grid`, resolving
-any cell references it depends on along the way:
+any cell references it depends on along the way, and returns a `Value` -
+either a number or text:
 
 ```rust
-use cellgrid_formulas::{eval_cell, CellRef, Grid};
+use cellgrid_formulas::{eval_cell, CellRef, Grid, Value};
 
 let grid = Grid::from_reader("1,2,3\n=SUM(A1:C1)+10".as_bytes())?;
 let total = eval_cell(&grid, CellRef::new(0, 1))?;
-assert_eq!(total, 16.0);
+assert_eq!(total, Value::Number(16.0));
+
+let grid = Grid::from_reader("Jane,Doe\n=A1&\" \"&B1".as_bytes())?;
+let name = eval_cell(&grid, CellRef::new(0, 1))?;
+assert_eq!(name, Value::Text("Jane Doe".to_string()));
 ```
+
+A cell that doesn't parse as a number is text rather than an evaluation
+error, so a formula can mix arithmetic and labels the way a real spreadsheet
+does. Arithmetic operators (`+ - * /`) require numeric operands and fail
+with `EvalError::NotANumber` on text; `&` concatenates either kind by
+turning both sides into text first.
 
 A blank or missing cell evaluates to 0 in arithmetic but is skipped by
 `AVERAGE`, `MIN`, `MAX`, and `COUNT` so missing data doesn't masquerade as a
@@ -65,6 +76,7 @@ like `A1>10`.
 - [x] Detecting circular references between cells
 - [x] Grid loading that handles quoted CSV fields
 - [x] Integration tests covering Grid + parser + eval end to end
+- [x] `Value` enum (number/text) and `&` string concatenation
 
 ## License
 

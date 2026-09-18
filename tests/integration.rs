@@ -3,7 +3,7 @@
 //! Unit tests in each module cover the pieces in isolation; this file is
 //! here to catch breakage in how those pieces fit together.
 
-use cellgrid_formulas::{eval_cell, CellRef, EvalError, Grid};
+use cellgrid_formulas::{eval_cell, CellRef, EvalError, Grid, Value};
 
 #[test]
 fn loads_and_evaluates_a_small_budget_sheet() {
@@ -20,10 +20,13 @@ Average,=AVERAGE(B1:B3)
     assert_eq!(grid.get(label), Some("Rent"));
 
     let total = CellRef::parse("B4").unwrap();
-    assert_eq!(eval_cell(&grid, total), Ok(1635.5));
+    assert_eq!(eval_cell(&grid, total), Ok(Value::Number(1635.5)));
 
     let average = CellRef::parse("B5").unwrap();
-    assert_eq!(eval_cell(&grid, average), Ok((1200.0 + 340.50 + 95.0) / 3.0));
+    assert_eq!(
+        eval_cell(&grid, average),
+        Ok(Value::Number((1200.0 + 340.50 + 95.0) / 3.0))
+    );
 }
 
 #[test]
@@ -32,7 +35,7 @@ fn a_formula_can_build_on_another_formula_several_cells_away() {
     let grid = Grid::from_reader(csv.as_bytes()).unwrap();
 
     let doubled_total = CellRef::parse("A3").unwrap();
-    assert_eq!(eval_cell(&grid, doubled_total), Ok(120.0));
+    assert_eq!(eval_cell(&grid, doubled_total), Ok(Value::Number(120.0)));
 }
 
 #[test]
@@ -54,5 +57,17 @@ fn round_trips_a_quoted_csv_export_through_evaluation() {
     assert_eq!(grid.get(name), Some("Smith, John"));
 
     let total = CellRef::parse("B3").unwrap();
-    assert_eq!(eval_cell(&grid, total), Ok(125.0));
+    assert_eq!(eval_cell(&grid, total), Ok(Value::Number(125.0)));
+}
+
+#[test]
+fn builds_a_text_label_out_of_cell_references_and_a_formula() {
+    let csv = "\"Smith, John\",50\nFull total,=A1&\": \"&B1";
+    let grid = Grid::from_reader(csv.as_bytes()).unwrap();
+
+    let label = CellRef::parse("B2").unwrap();
+    assert_eq!(
+        eval_cell(&grid, label),
+        Ok(Value::Text("Smith, John: 50".to_string()))
+    );
 }

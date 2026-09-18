@@ -7,6 +7,7 @@ use crate::formula::Token;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Number(f64),
+    Text(String),
     Cell(CellRef),
     Range(CellRef, CellRef),
     Neg(Box<Expr>),
@@ -20,6 +21,7 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+    Concat,
 }
 
 /// Parses a full token stream (as produced by `formula::tokenize`) into an
@@ -61,8 +63,19 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // expr := term (('+' | '-') term)*
+    // expr := additive ('&' additive)*
     fn parse_expr(&mut self) -> Result<Expr, String> {
+        let mut left = self.parse_additive()?;
+        while self.peek() == Some(&Token::Amp) {
+            self.advance();
+            let right = self.parse_additive()?;
+            left = Expr::BinOp(Box::new(left), BinOp::Concat, Box::new(right));
+        }
+        Ok(left)
+    }
+
+    // additive := term (('+' | '-') term)*
+    fn parse_additive(&mut self) -> Result<Expr, String> {
         let mut left = self.parse_term()?;
         loop {
             let op = match self.peek() {
@@ -109,12 +122,14 @@ impl<'a> Parser<'a> {
     }
 
     // primary := Number
+    //          | Text
     //          | Cell (':' Cell)?
     //          | Ident '(' (expr (',' expr)*)? ')'
     //          | '(' expr ')'
     fn parse_primary(&mut self) -> Result<Expr, String> {
         match self.advance().cloned() {
             Some(Token::Number(n)) => Ok(Expr::Number(n)),
+            Some(Token::Text(s)) => Ok(Expr::Text(s)),
             Some(Token::Cell(cell)) => {
                 if let Some(Token::Colon) = self.peek() {
                     self.advance();
@@ -237,6 +252,30 @@ mod tests {
                 ],
             )
         );
+    }
+
+    #[test]
+    fn concatenation_binds_looser_than_addition() {
+        // "x"&1+2 should be "x"&(1+2), not ("x"&1)+2.
+        let expr = parse_str(r#"="x"&1+2"#);
+        assert_eq!(
+            expr,
+            Expr::BinOp(
+                Box::new(Expr::Text("x".to_string())),
+                BinOp::Concat,
+                Box::new(Expr::BinOp(
+                    Box::new(Expr::Number(1.0)),
+                    BinOp::Add,
+                    Box::new(Expr::Number(2.0)),
+                )),
+            )
+        );
+    }
+
+    #[test]
+    fn parses_a_string_literal() {
+        let expr = parse_str(r#"="hello""#);
+        assert_eq!(expr, Expr::Text("hello".to_string()));
     }
 
     #[test]

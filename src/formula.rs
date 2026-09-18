@@ -7,12 +7,14 @@ use crate::address::CellRef;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Number(f64),
+    Text(String),
     Cell(CellRef),
     Ident(String),
     Plus,
     Minus,
     Star,
     Slash,
+    Amp,
     Colon,
     Comma,
     LParen,
@@ -44,6 +46,32 @@ pub fn tokenize(formula: &str) -> Result<Vec<Token>, String> {
             '/' => {
                 tokens.push(Token::Slash);
                 i += 1;
+            }
+            '&' => {
+                tokens.push(Token::Amp);
+                i += 1;
+            }
+            '"' => {
+                i += 1;
+                let mut text = String::new();
+                loop {
+                    match chars.get(i) {
+                        None => return Err("unterminated string literal".to_string()),
+                        Some('"') if chars.get(i + 1) == Some(&'"') => {
+                            text.push('"');
+                            i += 2;
+                        }
+                        Some('"') => {
+                            i += 1;
+                            break;
+                        }
+                        Some(c) => {
+                            text.push(*c);
+                            i += 1;
+                        }
+                    }
+                }
+                tokens.push(Token::Text(text));
             }
             ':' => {
                 tokens.push(Token::Colon);
@@ -127,6 +155,36 @@ mod tests {
 
     #[test]
     fn rejects_unknown_characters() {
-        assert!(tokenize("=A1&B1").is_err());
+        assert!(tokenize("=A1?B1").is_err());
+    }
+
+    #[test]
+    fn tokenizes_a_string_literal() {
+        let tokens = tokenize(r#"="hello""#).unwrap();
+        assert_eq!(tokens, vec![Token::Text("hello".to_string())]);
+    }
+
+    #[test]
+    fn a_doubled_quote_is_a_literal_quote_in_a_string_literal() {
+        let tokens = tokenize(r#"="she said ""hi""""#).unwrap();
+        assert_eq!(tokens, vec![Token::Text(r#"she said "hi""#.to_string())]);
+    }
+
+    #[test]
+    fn rejects_an_unterminated_string_literal() {
+        assert!(tokenize(r#"="hello"#).is_err());
+    }
+
+    #[test]
+    fn tokenizes_concatenation() {
+        let tokens = tokenize(r#"=A1&"x""#).unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Cell(CellRef::new(0, 0)),
+                Token::Amp,
+                Token::Text("x".to_string()),
+            ]
+        );
     }
 }
