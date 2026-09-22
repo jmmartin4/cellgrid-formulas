@@ -62,9 +62,12 @@ real zero. A cell whose formula (directly or transitively) refers back to
 itself comes back as `EvalError::CircularReference` instead of looping.
 
 `IF(condition, then, else)` only evaluates the branch it takes, and treats
-any nonzero condition as true - there's no comparison operator yet, so the
-condition is usually a cell holding a 0/1 flag rather than an expression
-like `A1>10`.
+any nonzero condition as true. The comparison operators (`= <> < > <= >=`)
+produce `1` or `0`, so `IF(A1>10, "over", "ok")` works the same way a cell
+holding a 0/1 flag already did. Numbers compare numerically and text
+compares lexicographically; a number is always considered less than any
+text, so a comparison always has an answer even when the two sides turn out
+to hold different kinds of value.
 
 ## Status
 
@@ -77,6 +80,7 @@ like `A1>10`.
 - [x] Grid loading that handles quoted CSV fields
 - [x] Integration tests covering Grid + parser + eval end to end
 - [x] `Value` enum (number/text) and `&` string concatenation
+- [x] Comparison operators (`= <> < > <= >=`) for use in `IF` conditions
 
 ## License
 

@@ -3,6 +3,7 @@ use crate::formula::tokenize;
 use crate::grid::Grid;
 use crate::parser::{parse, BinOp, Expr};
 use crate::value::Value;
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt;
 
@@ -108,10 +109,23 @@ fn eval_expr(
                 BinOp::Sub => Ok(Value::Number(l.as_number()? - r.as_number()?)),
                 BinOp::Mul => Ok(Value::Number(l.as_number()? * r.as_number()?)),
                 BinOp::Div => Ok(Value::Number(l.as_number()? / r.as_number()?)),
+                BinOp::Eq => Ok(bool_value(l.compare(&r) == Ordering::Equal)),
+                BinOp::Ne => Ok(bool_value(l.compare(&r) != Ordering::Equal)),
+                BinOp::Lt => Ok(bool_value(l.compare(&r) == Ordering::Less)),
+                BinOp::Gt => Ok(bool_value(l.compare(&r) == Ordering::Greater)),
+                BinOp::Le => Ok(bool_value(l.compare(&r) != Ordering::Greater)),
+                BinOp::Ge => Ok(bool_value(l.compare(&r) != Ordering::Less)),
             }
         }
         Expr::Call(name, args) => eval_call(grid, name, args, visiting),
     }
+}
+
+/// A comparison operator's result. There's no boolean `Value` variant, so a
+/// true or false comparison comes back as the same 1/0 that `IF`'s condition
+/// already treats as truthy or falsy, e.g. `IF(A1>10,"big","small")`.
+fn bool_value(b: bool) -> Value {
+    Value::Number(if b { 1.0 } else { 0.0 })
 }
 
 /// Collects the numbers a single call argument contributes. A range expands
@@ -195,11 +209,11 @@ fn eval_call(
     Ok(Value::Number(result))
 }
 
-/// `IF(condition, then, else)`. There's no comparison operator yet, so the
-/// condition is just "is this nonzero" - the same truthiness a `SUM` of a
-/// boolean-flag column already relies on. The taken branch is returned as
-/// whatever `Value` it evaluates to, so `IF` can pick between two numbers,
-/// two pieces of text, or one of each.
+/// `IF(condition, then, else)`. The condition is "is this nonzero" - true for
+/// a comparison like `A1>10` (which evaluates to 1 or 0) just as much as for
+/// a cell holding a plain 0/1 flag. The taken branch is returned as whatever
+/// `Value` it evaluates to, so `IF` can pick between two numbers, two pieces
+/// of text, or one of each.
 fn eval_if(
     grid: &Grid,
     args: &[Expr],
@@ -416,6 +430,32 @@ mod tests {
             eval_cell(&grid, CellRef::new(0, 0)),
             Ok(Value::Text("yes".to_string()))
         );
+    }
+
+    #[test]
+    fn if_condition_can_be_a_comparison() {
+        let grid = Grid::from_reader("15\n=IF(A1>10,\"big\",\"small\")".as_bytes()).unwrap();
+        assert_eq!(
+            eval_cell(&grid, CellRef::new(0, 1)),
+            Ok(Value::Text("big".to_string()))
+        );
+    }
+
+    #[test]
+    fn evaluates_each_comparison_operator() {
+        let grid = Grid::from_reader("=1<2,=1>2,=1<=1,=2>=3,=1=1,=1<>2".as_bytes()).unwrap();
+        assert_eq!(eval_cell(&grid, CellRef::new(0, 0)), Ok(Value::Number(1.0)));
+        assert_eq!(eval_cell(&grid, CellRef::new(1, 0)), Ok(Value::Number(0.0)));
+        assert_eq!(eval_cell(&grid, CellRef::new(2, 0)), Ok(Value::Number(1.0)));
+        assert_eq!(eval_cell(&grid, CellRef::new(3, 0)), Ok(Value::Number(0.0)));
+        assert_eq!(eval_cell(&grid, CellRef::new(4, 0)), Ok(Value::Number(1.0)));
+        assert_eq!(eval_cell(&grid, CellRef::new(5, 0)), Ok(Value::Number(1.0)));
+    }
+
+    #[test]
+    fn compares_text_cells_lexicographically() {
+        let grid = Grid::from_reader("apple,banana\n=A1<B1".as_bytes()).unwrap();
+        assert_eq!(eval_cell(&grid, CellRef::new(0, 1)), Ok(Value::Number(1.0)));
     }
 
     #[test]

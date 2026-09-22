@@ -22,6 +22,12 @@ pub enum BinOp {
     Mul,
     Div,
     Concat,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
 }
 
 /// Parses a full token stream (as produced by `formula::tokenize`) into an
@@ -63,8 +69,35 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // expr := additive ('&' additive)*
+    // expr := comparison
     fn parse_expr(&mut self) -> Result<Expr, String> {
+        self.parse_comparison()
+    }
+
+    // comparison := concat (('=' | '<>' | '<' | '>' | '<=' | '>=') concat)*
+    // Lowest precedence, same as Excel: `A1&"x"=B1` compares the whole
+    // concatenation, not just "x".
+    fn parse_comparison(&mut self) -> Result<Expr, String> {
+        let mut left = self.parse_concat()?;
+        loop {
+            let op = match self.peek() {
+                Some(Token::Eq) => BinOp::Eq,
+                Some(Token::Ne) => BinOp::Ne,
+                Some(Token::Lt) => BinOp::Lt,
+                Some(Token::Gt) => BinOp::Gt,
+                Some(Token::Le) => BinOp::Le,
+                Some(Token::Ge) => BinOp::Ge,
+                _ => break,
+            };
+            self.advance();
+            let right = self.parse_concat()?;
+            left = Expr::BinOp(Box::new(left), op, Box::new(right));
+        }
+        Ok(left)
+    }
+
+    // concat := additive ('&' additive)*
+    fn parse_concat(&mut self) -> Result<Expr, String> {
         let mut left = self.parse_additive()?;
         while self.peek() == Some(&Token::Amp) {
             self.advance();
@@ -270,6 +303,46 @@ mod tests {
                 )),
             )
         );
+    }
+
+    #[test]
+    fn comparison_binds_looser_than_concatenation() {
+        // A1&"x"=B1 should be (A1&"x")=B1, not A1&("x"=B1).
+        let expr = parse_str(r#"=A1&"x"=B1"#);
+        assert_eq!(
+            expr,
+            Expr::BinOp(
+                Box::new(Expr::BinOp(
+                    Box::new(Expr::Cell(CellRef::new(0, 0))),
+                    BinOp::Concat,
+                    Box::new(Expr::Text("x".to_string())),
+                )),
+                BinOp::Eq,
+                Box::new(Expr::Cell(CellRef::new(1, 0))),
+            )
+        );
+    }
+
+    #[test]
+    fn parses_all_comparison_operators() {
+        for (text, op) in [
+            ("=1=2", BinOp::Eq),
+            ("=1<>2", BinOp::Ne),
+            ("=1<2", BinOp::Lt),
+            ("=1>2", BinOp::Gt),
+            ("=1<=2", BinOp::Le),
+            ("=1>=2", BinOp::Ge),
+        ] {
+            let expr = parse_str(text);
+            assert_eq!(
+                expr,
+                Expr::BinOp(
+                    Box::new(Expr::Number(1.0)),
+                    op,
+                    Box::new(Expr::Number(2.0)),
+                )
+            );
+        }
     }
 
     #[test]

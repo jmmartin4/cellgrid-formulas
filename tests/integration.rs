@@ -61,6 +61,18 @@ fn round_trips_a_quoted_csv_export_through_evaluation() {
 }
 
 #[test]
+fn if_branches_on_a_comparison_against_a_budget_cap() {
+    let csv = "Rent,1200\nCap,1000\nStatus,=IF(B1>B2,\"over budget\",\"ok\")\n";
+    let grid = Grid::from_reader(csv.as_bytes()).unwrap();
+
+    let status = CellRef::parse("B3").unwrap();
+    assert_eq!(
+        eval_cell(&grid, status),
+        Ok(Value::Text("over budget".to_string()))
+    );
+}
+
+#[test]
 fn builds_a_text_label_out_of_cell_references_and_a_formula() {
     let csv = "\"Smith, John\",50\nFull total,=A1&\": \"&B1";
     let grid = Grid::from_reader(csv.as_bytes()).unwrap();

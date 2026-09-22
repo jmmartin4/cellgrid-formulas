@@ -1,4 +1,5 @@
 use crate::eval::EvalError;
+use std::cmp::Ordering;
 use std::fmt;
 
 /// What a cell evaluates to: either a number, for arithmetic, or text, for
@@ -21,6 +22,21 @@ impl Value {
         match self {
             Value::Number(n) => Ok(*n),
             Value::Text(s) => Err(EvalError::NotANumber(s.clone())),
+        }
+    }
+
+    /// Ordering used by the comparison operators (`= <> < > <= >=`).
+    /// Numbers compare numerically and text compares lexicographically; a
+    /// number and a piece of text never coerce into each other for
+    /// arithmetic, but a comparison still needs some answer, so a number is
+    /// always treated as less than any text - the same rule spreadsheets use
+    /// when sorting a column that mixes the two.
+    pub fn compare(&self, other: &Value) -> Ordering {
+        match (self, other) {
+            (Value::Number(a), Value::Number(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+            (Value::Text(a), Value::Text(b)) => a.cmp(b),
+            (Value::Number(_), Value::Text(_)) => Ordering::Less,
+            (Value::Text(_), Value::Number(_)) => Ordering::Greater,
         }
     }
 }
@@ -55,5 +71,32 @@ mod tests {
     fn displays_numbers_and_text_plainly() {
         assert_eq!(Value::Number(2.0).to_string(), "2");
         assert_eq!(Value::Text("hi".to_string()).to_string(), "hi");
+    }
+
+    #[test]
+    fn compares_numbers_numerically() {
+        assert_eq!(Value::Number(1.0).compare(&Value::Number(2.0)), Ordering::Less);
+        assert_eq!(Value::Number(2.0).compare(&Value::Number(2.0)), Ordering::Equal);
+        assert_eq!(Value::Number(3.0).compare(&Value::Number(2.0)), Ordering::Greater);
+    }
+
+    #[test]
+    fn compares_text_lexicographically() {
+        assert_eq!(
+            Value::Text("apple".to_string()).compare(&Value::Text("banana".to_string())),
+            Ordering::Less
+        );
+    }
+
+    #[test]
+    fn a_number_always_sorts_before_text() {
+        assert_eq!(
+            Value::Number(999.0).compare(&Value::Text("a".to_string())),
+            Ordering::Less
+        );
+        assert_eq!(
+            Value::Text("a".to_string()).compare(&Value::Number(999.0)),
+            Ordering::Greater
+        );
     }
 }

@@ -19,6 +19,12 @@ pub enum Token {
     Comma,
     LParen,
     RParen,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
 }
 
 pub fn tokenize(formula: &str) -> Result<Vec<Token>, String> {
@@ -50,6 +56,31 @@ pub fn tokenize(formula: &str) -> Result<Vec<Token>, String> {
             '&' => {
                 tokens.push(Token::Amp);
                 i += 1;
+            }
+            '=' => {
+                tokens.push(Token::Eq);
+                i += 1;
+            }
+            '<' => {
+                if chars.get(i + 1) == Some(&'=') {
+                    tokens.push(Token::Le);
+                    i += 2;
+                } else if chars.get(i + 1) == Some(&'>') {
+                    tokens.push(Token::Ne);
+                    i += 2;
+                } else {
+                    tokens.push(Token::Lt);
+                    i += 1;
+                }
+            }
+            '>' => {
+                if chars.get(i + 1) == Some(&'=') {
+                    tokens.push(Token::Ge);
+                    i += 2;
+                } else {
+                    tokens.push(Token::Gt);
+                    i += 1;
+                }
             }
             '"' => {
                 i += 1;
@@ -173,6 +204,28 @@ mod tests {
     #[test]
     fn rejects_an_unterminated_string_literal() {
         assert!(tokenize(r#"="hello"#).is_err());
+    }
+
+    #[test]
+    fn tokenizes_a_comparison_against_a_cell() {
+        let tokens = tokenize("=A1<=1").unwrap();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::Cell(CellRef::new(0, 0)),
+                Token::Le,
+                Token::Number(1.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn distinguishes_lt_gt_and_ne() {
+        assert_eq!(tokenize("=1<2").unwrap(), vec![Token::Number(1.0), Token::Lt, Token::Number(2.0)]);
+        assert_eq!(tokenize("=1>2").unwrap(), vec![Token::Number(1.0), Token::Gt, Token::Number(2.0)]);
+        assert_eq!(tokenize("=1<>2").unwrap(), vec![Token::Number(1.0), Token::Ne, Token::Number(2.0)]);
+        assert_eq!(tokenize("=1>=2").unwrap(), vec![Token::Number(1.0), Token::Ge, Token::Number(2.0)]);
+        assert_eq!(tokenize("=1=2").unwrap(), vec![Token::Number(1.0), Token::Eq, Token::Number(2.0)]);
     }
 
     #[test]
