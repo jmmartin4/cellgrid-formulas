@@ -31,6 +31,13 @@ let b1 = CellRef::parse("B1").unwrap();
 if let Some(value) = grid.get(b1) {
     println!("{value}");
 }
+
+// walk a range without going through a formula at all
+use cellgrid_formulas::RangeIter;
+let (start, end) = CellRef::parse_range("A1:C3").unwrap();
+for cell in RangeIter::new(start, end) {
+    println!("{cell}");
+}
 ```
 
 Formula text is parsed into an expression tree with the usual operator
@@ -81,6 +88,7 @@ to hold different kinds of value.
 - [x] Integration tests covering Grid + parser + eval end to end
 - [x] `Value` enum (number/text) and `&` string concatenation
 - [x] Comparison operators (`= <> < > <= >=`) for use in `IF` conditions
+- [x] `RangeIter` and `CellRef::parse_range` for `A1:C3`-style expansion outside a formula
 
 ## License
 

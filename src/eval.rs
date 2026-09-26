@@ -1,4 +1,4 @@
-use crate::address::{expand_range, CellRef};
+use crate::address::{CellRef, RangeIter};
 use crate::formula::tokenize;
 use crate::grid::Grid;
 use crate::parser::{parse, BinOp, Expr};
@@ -142,7 +142,7 @@ fn collect_values(
     match expr {
         Expr::Range(start, end) => {
             let mut values = Vec::new();
-            for cell in expand_range(*start, *end) {
+            for cell in RangeIter::new(*start, *end) {
                 if cell_is_blank(grid, cell) {
                     continue;
                 }

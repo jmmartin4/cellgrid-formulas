@@ -45,30 +45,74 @@ impl CellRef {
             row: row - 1,
         })
     }
+
+    /// Parses an "A1:C3"-style range into its two corners. This is the part
+    /// `SUM`/`AVERAGE` never had to expose on its own: something that wants
+    /// to walk a range without going through the formula tokenizer can split
+    /// on the same `:` a formula body uses and get both `CellRef`s directly.
+    pub fn parse_range(s: &str) -> Option<(CellRef, CellRef)> {
+        let (start, end) = s.trim().split_once(':')?;
+        Some((CellRef::parse(start)?, CellRef::parse(end)?))
+    }
+}
+
+/// A lazy, row-major iterator over every cell in a rectangular range.
+/// Accepts corners in either order, so `A1:C3` and `C3:A1` produce the same
+/// cells. Being an iterator rather than a `Vec` matters once a range gets
+/// used somewhere other than an aggregate that was going to visit every cell
+/// anyway - something that only wants the first few cells, or that wants to
+/// stop early, doesn't pay to build cells it never looks at.
+#[derive(Debug, Clone)]
+pub struct RangeIter {
+    col_start: u32,
+    col_end: u32,
+    row_end: u32,
+    next: Option<(u32, u32)>,
+}
+
+impl RangeIter {
+    pub fn new(a: CellRef, b: CellRef) -> Self {
+        let (col_start, col_end) = if a.col <= b.col {
+            (a.col, b.col)
+        } else {
+            (b.col, a.col)
+        };
+        let (row_start, row_end) = if a.row <= b.row {
+            (a.row, b.row)
+        } else {
+            (b.row, a.row)
+        };
+        RangeIter {
+            col_start,
+            col_end,
+            row_end,
+            next: Some((col_start, row_start)),
+        }
+    }
+}
+
+impl Iterator for RangeIter {
+    type Item = CellRef;
+
+    fn next(&mut self) -> Option<CellRef> {
+        let (col, row) = self.next?;
+        self.next = if col < self.col_end {
+            Some((col + 1, row))
+        } else if row < self.row_end {
+            Some((self.col_start, row + 1))
+        } else {
+            None
+        };
+        Some(CellRef::new(col, row))
+    }
 }
 
 /// Expands a rectangular range into every cell it covers, in row-major
-/// order. Accepts corners in either order, so `A1:C3` and `C3:A1` expand
-/// to the same set of cells.
+/// order. A thin `Vec`-collecting wrapper around [`RangeIter`] for callers
+/// that want the whole set at once, such as the aggregate functions that
+/// were always going to visit every cell in the range regardless.
 pub fn expand_range(a: CellRef, b: CellRef) -> Vec<CellRef> {
-    let (col_start, col_end) = if a.col <= b.col {
-        (a.col, b.col)
-    } else {
-        (b.col, a.col)
-    };
-    let (row_start, row_end) = if a.row <= b.row {
-        (a.row, b.row)
-    } else {
-        (b.row, a.row)
-    };
-
-    let mut cells = Vec::with_capacity(((row_end - row_start + 1) * (col_end - col_start + 1)) as usize);
-    for row in row_start..=row_end {
-        for col in col_start..=col_end {
-            cells.push(CellRef::new(col, row));
-        }
-    }
-    cells
+    RangeIter::new(a, b).collect()
 }
 
 impl fmt::Display for CellRef {
@@ -141,5 +185,39 @@ mod tests {
     fn expands_a_single_cell_range() {
         let cells = expand_range(CellRef::new(3, 3), CellRef::new(3, 3));
         assert_eq!(cells, vec![CellRef::new(3, 3)]);
+    }
+
+    #[test]
+    fn range_iter_matches_expand_range() {
+        let a = CellRef::new(0, 0);
+        let b = CellRef::new(2, 2);
+        let via_iter: Vec<CellRef> = RangeIter::new(a, b).collect();
+        assert_eq!(via_iter, expand_range(a, b));
+    }
+
+    #[test]
+    fn range_iter_can_be_stopped_early_without_visiting_the_rest() {
+        let mut iter = RangeIter::new(CellRef::new(0, 0), CellRef::new(1, 1));
+        assert_eq!(iter.next(), Some(CellRef::new(0, 0)));
+        assert_eq!(iter.next(), Some(CellRef::new(1, 0)));
+        drop(iter);
+    }
+
+    #[test]
+    fn parses_a_range_string_into_its_corners() {
+        assert_eq!(
+            CellRef::parse_range("A1:C3"),
+            Some((CellRef::new(0, 0), CellRef::new(2, 2)))
+        );
+    }
+
+    #[test]
+    fn parse_range_rejects_input_without_a_colon() {
+        assert_eq!(CellRef::parse_range("A1"), None);
+    }
+
+    #[test]
+    fn parse_range_rejects_a_malformed_corner() {
+        assert_eq!(CellRef::parse_range("A1:???"), None);
     }
 }

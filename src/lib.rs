@@ -10,7 +10,7 @@ pub mod grid;
 pub mod parser;
 pub mod value;
 
-pub use address::CellRef;
+pub use address::{CellRef, RangeIter};
 pub use eval::{eval_cell, EvalError};
 pub use grid::Grid;
 pub use parser::{parse, BinOp, Expr};
