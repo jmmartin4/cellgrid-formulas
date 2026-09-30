@@ -109,23 +109,16 @@ fn eval_expr(
                 BinOp::Sub => Ok(Value::Number(l.as_number()? - r.as_number()?)),
                 BinOp::Mul => Ok(Value::Number(l.as_number()? * r.as_number()?)),
                 BinOp::Div => Ok(Value::Number(l.as_number()? / r.as_number()?)),
-                BinOp::Eq => Ok(bool_value(l.compare(&r) == Ordering::Equal)),
-                BinOp::Ne => Ok(bool_value(l.compare(&r) != Ordering::Equal)),
-                BinOp::Lt => Ok(bool_value(l.compare(&r) == Ordering::Less)),
-                BinOp::Gt => Ok(bool_value(l.compare(&r) == Ordering::Greater)),
-                BinOp::Le => Ok(bool_value(l.compare(&r) != Ordering::Greater)),
-                BinOp::Ge => Ok(bool_value(l.compare(&r) != Ordering::Less)),
+                BinOp::Eq => Ok(Value::Bool(l.compare(&r) == Ordering::Equal)),
+                BinOp::Ne => Ok(Value::Bool(l.compare(&r) != Ordering::Equal)),
+                BinOp::Lt => Ok(Value::Bool(l.compare(&r) == Ordering::Less)),
+                BinOp::Gt => Ok(Value::Bool(l.compare(&r) == Ordering::Greater)),
+                BinOp::Le => Ok(Value::Bool(l.compare(&r) != Ordering::Greater)),
+                BinOp::Ge => Ok(Value::Bool(l.compare(&r) != Ordering::Less)),
             }
         }
         Expr::Call(name, args) => eval_call(grid, name, args, visiting),
     }
-}
-
-/// A comparison operator's result. There's no boolean `Value` variant, so a
-/// true or false comparison comes back as the same 1/0 that `IF`'s condition
-/// already treats as truthy or falsy, e.g. `IF(A1>10,"big","small")`.
-fn bool_value(b: bool) -> Value {
-    Value::Number(if b { 1.0 } else { 0.0 })
 }
 
 /// Collects the numbers a single call argument contributes. A range expands
@@ -209,9 +202,9 @@ fn eval_call(
     Ok(Value::Number(result))
 }
 
-/// `IF(condition, then, else)`. The condition is "is this nonzero" - true for
-/// a comparison like `A1>10` (which evaluates to 1 or 0) just as much as for
-/// a cell holding a plain 0/1 flag. The taken branch is returned as whatever
+/// `IF(condition, then, else)`. The condition is a boolean such as `A1>10`,
+/// or a number, which is true when nonzero, so a cell holding a plain 0/1
+/// flag still works. The taken branch is returned as whatever
 /// `Value` it evaluates to, so `IF` can pick between two numbers, two pieces
 /// of text, or one of each.
 fn eval_if(
@@ -226,8 +219,8 @@ fn eval_if(
             args.len(),
         ));
     }
-    let condition = eval_expr(grid, &args[0], visiting)?.as_number()?;
-    if condition != 0.0 {
+    let condition = eval_expr(grid, &args[0], visiting)?.as_bool()?;
+    if condition {
         eval_expr(grid, &args[1], visiting)
     } else {
         eval_expr(grid, &args[2], visiting)
@@ -444,18 +437,42 @@ mod tests {
     #[test]
     fn evaluates_each_comparison_operator() {
         let grid = Grid::from_reader("=1<2,=1>2,=1<=1,=2>=3,=1=1,=1<>2".as_bytes()).unwrap();
-        assert_eq!(eval_cell(&grid, CellRef::new(0, 0)), Ok(Value::Number(1.0)));
-        assert_eq!(eval_cell(&grid, CellRef::new(1, 0)), Ok(Value::Number(0.0)));
-        assert_eq!(eval_cell(&grid, CellRef::new(2, 0)), Ok(Value::Number(1.0)));
-        assert_eq!(eval_cell(&grid, CellRef::new(3, 0)), Ok(Value::Number(0.0)));
-        assert_eq!(eval_cell(&grid, CellRef::new(4, 0)), Ok(Value::Number(1.0)));
-        assert_eq!(eval_cell(&grid, CellRef::new(5, 0)), Ok(Value::Number(1.0)));
+        assert_eq!(eval_cell(&grid, CellRef::new(0, 0)), Ok(Value::Bool(true)));
+        assert_eq!(eval_cell(&grid, CellRef::new(1, 0)), Ok(Value::Bool(false)));
+        assert_eq!(eval_cell(&grid, CellRef::new(2, 0)), Ok(Value::Bool(true)));
+        assert_eq!(eval_cell(&grid, CellRef::new(3, 0)), Ok(Value::Bool(false)));
+        assert_eq!(eval_cell(&grid, CellRef::new(4, 0)), Ok(Value::Bool(true)));
+        assert_eq!(eval_cell(&grid, CellRef::new(5, 0)), Ok(Value::Bool(true)));
     }
 
     #[test]
     fn compares_text_cells_lexicographically() {
         let grid = Grid::from_reader("apple,banana\n=A1<B1".as_bytes()).unwrap();
-        assert_eq!(eval_cell(&grid, CellRef::new(0, 1)), Ok(Value::Number(1.0)));
+        assert_eq!(eval_cell(&grid, CellRef::new(0, 1)), Ok(Value::Bool(true)));
+    }
+
+    #[test]
+    fn a_comparison_can_be_used_as_a_number() {
+        let grid = Grid::from_reader("5\n=(A1>3)*10".as_bytes()).unwrap();
+        assert_eq!(eval_cell(&grid, CellRef::new(0, 1)), Ok(Value::Number(10.0)));
+    }
+
+    #[test]
+    fn a_comparison_concatenates_as_true_or_false() {
+        let grid = Grid::from_reader(r#"="ok: "&(1<2)"#.as_bytes()).unwrap();
+        assert_eq!(
+            eval_cell(&grid, CellRef::new(0, 0)),
+            Ok(Value::Text("ok: TRUE".to_string()))
+        );
+    }
+
+    #[test]
+    fn if_rejects_a_text_condition() {
+        let grid = Grid::from_reader("hi\n=IF(A1,1,2)".as_bytes()).unwrap();
+        assert_eq!(
+            eval_cell(&grid, CellRef::new(0, 1)),
+            Err(EvalError::NotANumber("hi".to_string()))
+        );
     }
 
     #[test]
